@@ -1584,7 +1584,137 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
         async downloadAll() { if(this.generatedBlobs.length === 0) return; if(typeof JSZip === 'undefined') { try { await loadJSZip(); } catch(e) { alert('JSZip 加载失败'); return; } } const zip = new JSZip(); const folder = zip.folder("slices"); this.generatedBlobs.forEach(item => folder.file(item.name, item.blob)); const content = await zip.generateAsync({type:"blob"}); const a = document.createElement('a'); a.href = URL.createObjectURL(content); a.download = `slices_${Date.now()}.zip`; a.click(); }
     };
 
-    const ProviderManager={providers:[],activeId:'random',init(){try{this.providers=JSON.parse(localStorage.getItem('gemini_providers')||'[]');this.activeId=localStorage.getItem('gemini_active_provider')||'random';const oldHost=localStorage.getItem('api-host');if(oldHost&&this.providers.length===0){this.providers.push({id:'legacy_'+Date.now(),name:'默认渠道',type:'gemini',host:oldHost,key:localStorage.getItem('api-key')||'',model:localStorage.getItem('model-name')||'gemini-3-pro-image-preview'});this.saveToStorage()}}catch(e){console.error(e);this.providers=[]}this.renderUI()},saveToStorage(){localStorage.setItem('gemini_providers',JSON.stringify(this.providers));localStorage.setItem('gemini_active_provider',this.activeId)},renderUI(){const select=document.getElementById('provider-select');select.innerHTML='<option value="random">🎲 随机优选 (自动轮询)</option>';this.providers.forEach(p=>{const opt=document.createElement('option');opt.value=p.id;opt.text=p.name;if(p.id===this.activeId)opt.selected=true;select.appendChild(opt)});if(this.activeId==='random')select.value='random';const list=document.getElementById('provider-list');list.innerHTML='';this.providers.forEach(p=>{const div=document.createElement('div');div.className='provider-item';const typeLabel=p.type==='openai'?'[OpenAI]':'[Gemini]';div.innerHTML=`<span>${escapeHtml(p.name)} <span style="color:#1a73e8;font-size:9px;">${typeLabel}</span></span> <span style="color:#999; font-size:10px;">${escapeHtml(p.model)}</span>`;div.onclick=()=>this.loadForm(p);list.appendChild(div)})},loadForm(provider){document.getElementById('p-id').value=provider.id;document.getElementById('p-name').value=provider.name;document.getElementById('p-type').value=provider.type||'gemini';document.getElementById('p-host').value=provider.host;document.getElementById('p-key').value=provider.key;document.getElementById('p-model').value=provider.model;const items=document.querySelectorAll('.provider-item');items.forEach(el=>{if(el.textContent.includes(provider.name))el.classList.add('selected');else el.classList.remove('selected')})},clearForm(){document.getElementById('p-id').value='';document.getElementById('p-name').value='';document.getElementById('p-type').value='gemini';document.getElementById('p-host').value='';document.getElementById('p-key').value='';document.getElementById('p-model').value='';document.querySelectorAll('.provider-item').forEach(el=>el.classList.remove('selected'))},save(){const id=document.getElementById('p-id').value;const name=document.getElementById('p-name').value.trim();const type=document.getElementById('p-type').value;const host=document.getElementById('p-host').value.trim();const key=document.getElementById('p-key').value.trim();const model=document.getElementById('p-model').value.trim();if(!name||!host||!key||!model){alert("所有字段必填");return}if(id){const idx=this.providers.findIndex(p=>p.id===id);if(idx>-1)this.providers[idx]={id,name,type,host,key,model}}else{this.providers.push({id:'p_'+Date.now(),name,type,host,key,model})}this.saveToStorage();this.renderUI();this.clearForm()},del(){const id=document.getElementById('p-id').value;if(!id)return;if(!confirm("确定删除该渠道?"))return;this.providers=this.providers.filter(p=>p.id!==id);if(this.activeId===id)this.activeId='random';this.saveToStorage();this.renderUI();this.clearForm()},select(val){this.activeId=val;localStorage.setItem('gemini_active_provider',val)},getConfig(){if(this.providers.length===0)return null;if(this.activeId==='random'||!this.providers.find(p=>p.id===this.activeId)){const idx=Math.floor(Math.random()*this.providers.length);return this.providers[idx]}else{return this.providers.find(p=>p.id===this.activeId)}}};
+    const ProviderManager={
+        providers:[],
+        activeId:'random',
+        normalizeProvider(provider){
+            return {...provider,type:provider.type||'gemini',openaiMode:provider.openaiMode||'chat'};
+        },
+        init(){
+            try{
+                this.providers=JSON.parse(localStorage.getItem('gemini_providers')||'[]').map(provider=>this.normalizeProvider(provider));
+                this.activeId=localStorage.getItem('gemini_active_provider')||'random';
+                const oldHost=localStorage.getItem('api-host');
+                if(oldHost&&this.providers.length===0){
+                    this.providers.push(this.normalizeProvider({
+                        id:'legacy_'+Date.now(),
+                        name:'默认渠道',
+                        type:'gemini',
+                        host:oldHost,
+                        key:localStorage.getItem('api-key')||'',
+                        model:localStorage.getItem('model-name')||'gemini-3-pro-image-preview'
+                    }));
+                    this.saveToStorage();
+                }
+            }catch(e){
+                console.error(e);
+                this.providers=[];
+            }
+            this.renderUI();
+            this.handleTypeChange(document.getElementById('p-type')?.value||'gemini');
+        },
+        saveToStorage(){
+            localStorage.setItem('gemini_providers',JSON.stringify(this.providers));
+            localStorage.setItem('gemini_active_provider',this.activeId);
+        },
+        handleTypeChange(type){
+            const group=document.getElementById('openai-mode-group');
+            if(group)group.style.display=type==='openai'?'block':'none';
+        },
+        renderUI(){
+            const select=document.getElementById('provider-select');
+            select.innerHTML='<option value="random">🎲 随机优选 (自动轮询)</option>';
+            this.providers.forEach(p=>{
+                const provider=this.normalizeProvider(p);
+                const opt=document.createElement('option');
+                opt.value=provider.id;
+                opt.text=provider.name;
+                if(provider.id===this.activeId)opt.selected=true;
+                select.appendChild(opt);
+            });
+            if(this.activeId==='random')select.value='random';
+
+            const list=document.getElementById('provider-list');
+            list.innerHTML='';
+            this.providers.forEach(p=>{
+                const provider=this.normalizeProvider(p);
+                const div=document.createElement('div');
+                div.className='provider-item';
+                const typeLabel=provider.type==='openai'?(provider.openaiMode==='images'?'[OpenAI/Images]':'[OpenAI]'):'[Gemini]';
+                div.innerHTML=`<span>${escapeHtml(provider.name)} <span style="color:#1a73e8;font-size:9px;">${typeLabel}</span></span> <span style="color:#999; font-size:10px;">${escapeHtml(provider.model)}</span>`;
+                div.onclick=()=>this.loadForm(provider);
+                list.appendChild(div);
+            });
+        },
+        loadForm(provider){
+            const normalized=this.normalizeProvider(provider);
+            document.getElementById('p-id').value=normalized.id;
+            document.getElementById('p-name').value=normalized.name;
+            document.getElementById('p-type').value=normalized.type;
+            document.getElementById('p-host').value=normalized.host;
+            document.getElementById('p-key').value=normalized.key;
+            document.getElementById('p-model').value=normalized.model;
+            const openaiModeSelect=document.getElementById('p-openai-mode');
+            if(openaiModeSelect)openaiModeSelect.value=normalized.openaiMode||'chat';
+            this.handleTypeChange(normalized.type);
+            const items=document.querySelectorAll('.provider-item');
+            items.forEach(el=>{if(el.textContent.includes(normalized.name))el.classList.add('selected');else el.classList.remove('selected')});
+        },
+        clearForm(){
+            document.getElementById('p-id').value='';
+            document.getElementById('p-name').value='';
+            document.getElementById('p-type').value='gemini';
+            document.getElementById('p-host').value='';
+            document.getElementById('p-key').value='';
+            document.getElementById('p-model').value='';
+            const openaiModeSelect=document.getElementById('p-openai-mode');
+            if(openaiModeSelect)openaiModeSelect.value='chat';
+            this.handleTypeChange('gemini');
+            document.querySelectorAll('.provider-item').forEach(el=>el.classList.remove('selected'));
+        },
+        save(){
+            const id=document.getElementById('p-id').value;
+            const name=document.getElementById('p-name').value.trim();
+            const type=document.getElementById('p-type').value;
+            const host=document.getElementById('p-host').value.trim();
+            const key=document.getElementById('p-key').value.trim();
+            const model=document.getElementById('p-model').value.trim();
+            const openaiMode=document.getElementById('p-openai-mode')?.value||'chat';
+            if(!name||!host||!key||!model){alert("所有字段必填");return}
+            const provider=this.normalizeProvider({id:id||'p_'+Date.now(),name,type,host,key,model,openaiMode});
+            if(id){
+                const idx=this.providers.findIndex(p=>p.id===id);
+                if(idx>-1)this.providers[idx]=provider;
+            }else{
+                this.providers.push(provider);
+            }
+            this.saveToStorage();
+            this.renderUI();
+            this.clearForm();
+        },
+        del(){
+            const id=document.getElementById('p-id').value;
+            if(!id)return;
+            if(!confirm("确定删除该渠道?"))return;
+            this.providers=this.providers.filter(p=>p.id!==id);
+            if(this.activeId===id)this.activeId='random';
+            this.saveToStorage();
+            this.renderUI();
+            this.clearForm();
+        },
+        select(val){
+            this.activeId=val;
+            localStorage.setItem('gemini_active_provider',val);
+        },
+        getConfig(){
+            if(this.providers.length===0)return null;
+            if(this.activeId==='random'||!this.providers.find(p=>p.id===this.activeId)){
+                const idx=Math.floor(Math.random()*this.providers.length);
+                return this.normalizeProvider(this.providers[idx]);
+            }
+            return this.normalizeProvider(this.providers.find(p=>p.id===this.activeId));
+        }
+    };
     
     const DB_NAME='GeminiProDB';const DB_VERSION=2;let db=null;let currentSessionId=null;const activeGenerations=new Set();
     function initDB(){return new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,DB_VERSION);request.onupgradeneeded=(e)=>{const db=e.target.result;if(!db.objectStoreNames.contains('sessions'))db.createObjectStore('sessions',{keyPath:'id'});if(!db.objectStoreNames.contains('messages')){const msgStore=db.createObjectStore('messages',{keyPath:'id',autoIncrement:true});msgStore.createIndex('sessionId','sessionId',{unique:false})}};request.onsuccess=(e)=>{db=e.target.result;resolve(db)};request.onerror=(e)=>reject(e)})}
@@ -1721,13 +1851,311 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
 
     async function urlToRef(url) { try { const response = await nativeFetch(url); const blob = await response.blob(); const reader = new FileReader(); reader.onloadend = () => { useAsReference(reader.result); }; reader.readAsDataURL(blob); } catch (e) { alert("获取远程图片失败（可能是跨域限制）。\n请点击下载按钮保存图片，然后手动上传。"); } }
 
+    function normalizeOpenAIHost(host=''){
+        return String(host).trim().replace(/\/+$/,'').replace(/\/v1$/,'');
+    }
+
+    function getOpenAIImageQuality(){
+        const resolution=String(state.resolution||'').toLowerCase();
+        if(resolution.includes('4k'))return'high';
+        if(resolution.includes('2048')||resolution.includes('2k'))return'medium';
+        return'low';
+    }
+
+    function getOpenAIImageSize(){
+        const ratio=state.aspectRatio||'auto';
+        if(ratio==='auto')return'auto';
+        if(ratio==='1:1')return'1024x1024';
+
+        const [ratioWidth,ratioHeight]=ratio.split(':').map(Number);
+        if(!ratioWidth||!ratioHeight)return'1024x1024';
+        return ratioWidth>ratioHeight?'1536x1024':'1024x1536';
+    }
+
+    function enhanceOpenAIImagePrompt(prompt){
+        const ratio=state.aspectRatio||'auto';
+        if(ratio==='auto')return prompt;
+        if(ratio==='21:9'){
+            return `${prompt}\n\n构图要求：必须使用超宽电影感 21:9 横幅构图，画面左右延展明显，主体不要贴近上下边缘，预留足够的横向景别与环境空间。禁止把主体横向拉宽或纵向压扁。`;
+        }
+        if(ratio==='16:9'||ratio==='3:2'||ratio==='4:3'||ratio==='5:4'){
+            return `${prompt}\n\n构图要求：请按 ${ratio} 横版构图组织画面，主体比例自然，不要横向拉伸人物、文字和建筑。`;
+        }
+        if(ratio==='4:5'||ratio==='3:4'||ratio==='2:3'||ratio==='9:16'){
+            return `${prompt}\n\n构图要求：请按 ${ratio} 竖版构图组织画面，主体比例自然，不要纵向拉长人物、文字和建筑。`;
+        }
+        if(ratio==='1:1'){
+            return `${prompt}\n\n构图要求：请按 1:1 方图构图，主体比例自然，不要挤压或拉伸内容。`;
+        }
+        return prompt;
+    }
+
+    function loadImageFromDataUrl(dataUrl){
+        return new Promise((resolve,reject)=>{
+            const image=new Image();
+            image.onload=()=>resolve(image);
+            image.onerror=()=>reject(new Error('图片加载失败，无法处理比例'));
+            image.src=dataUrl;
+        });
+    }
+
+    async function cropDataUrlToAspect(dataUrl,targetAspectRatio,mimeType='image/png'){
+        const image=await loadImageFromDataUrl(dataUrl);
+        const sourceWidth=image.naturalWidth||image.width;
+        const sourceHeight=image.naturalHeight||image.height;
+        const sourceAspectRatio=sourceWidth/sourceHeight;
+        let cropWidth=sourceWidth;
+        let cropHeight=sourceHeight;
+        let cropX=0;
+        let cropY=0;
+
+        if(Math.abs(sourceAspectRatio-targetAspectRatio)<0.001){
+            return dataUrl;
+        }
+
+        if(sourceAspectRatio>targetAspectRatio){
+            cropWidth=Math.round(sourceHeight*targetAspectRatio);
+            cropX=Math.max(0,Math.round((sourceWidth-cropWidth)/2));
+        }else{
+            cropHeight=Math.round(sourceWidth/targetAspectRatio);
+            cropY=Math.max(0,Math.round((sourceHeight-cropHeight)/2));
+        }
+
+        const canvas=document.createElement('canvas');
+        canvas.width=cropWidth;
+        canvas.height=cropHeight;
+        const context=canvas.getContext('2d');
+        context.drawImage(image,cropX,cropY,cropWidth,cropHeight,0,0,cropWidth,cropHeight);
+        return canvas.toDataURL(mimeType);
+    }
+
+    async function maybePostProcessGeneratedImage(config,fullBase64,mimeType){
+        return fullBase64;
+    }
+
+    function getOpenAIOutputMime(outputFormat='png'){
+        const format=String(outputFormat||'png').toLowerCase();
+        if(format==='jpeg'||format==='jpg')return'image/jpeg';
+        if(format==='webp')return'image/webp';
+        return'image/png';
+    }
+
+    async function buildOpenAIImagePrompt(sessionId,text){
+        const prompt=text||'Generate image';
+        if(!state.useContext||state.contextCount<=0)return prompt;
+        const historyMessages=await getSessionMessages(sessionId);
+        const recentMessages=historyMessages.slice(-state.contextCount*2-1,-1).filter(msg=>msg.content);
+        if(recentMessages.length===0)return prompt;
+        const contextBlock=recentMessages.map(msg=>`${msg.role==='user'?'用户':'助手'}：${msg.content}`).join('\n');
+        return `请结合以下历史上下文继续创作，但优先满足最后的当前需求。\n\n${contextBlock}\n\n当前需求：${prompt}`;
+    }
+
+    function rawBase64ToFile(base64Data,filename,mimeType='image/jpeg'){
+        const binary=atob(base64Data);
+        const bytes=new Uint8Array(binary.length);
+        for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+        return new File([bytes],filename,{type:mimeType});
+    }
+
+    function normalizeOpenAIImagesApiResponse(payload,fallbackMimeType='image/png'){
+        const imageItem=payload?.data?.find(item=>item?.b64_json);
+        if(!imageItem)return payload;
+        return {
+            candidates:[{
+                content:{
+                    parts:[{
+                        inlineData:{
+                            mimeType:getOpenAIOutputMime(imageItem.output_format||fallbackMimeType.split('/')[1]||'png'),
+                            data:imageItem.b64_json
+                        }
+                    }]
+                }
+            }]
+        };
+    }
+
+    async function parseOpenAIImageStream(response,loadingDiv,sessionId){
+        const contentType=(response.headers.get('content-type')||'').toLowerCase();
+        if(contentType.includes('application/json')){
+            const payload=await response.json();
+            return normalizeOpenAIImagesApiResponse(payload,'image/png');
+        }
+
+        const reader=response.body?.getReader();
+        if(!reader)throw new Error('当前浏览器不支持流式图片读取');
+        const decoder=new TextDecoder();
+        let buffer='';
+        let rawResponse='';
+        let previewDiv=null;
+        let finalImageB64='';
+        let finalMimeType='image/png';
+        const previewId=`stream-image-preview-${sessionId}`;
+
+        const renderPreview=(fullBase64,label)=>{
+            if(sessionId!==currentSessionId)return;
+            if(loadingDiv){
+                loadingDiv.remove();
+                loadingDiv=null;
+            }
+            const previewHtml=`<div class="msg-content" style="padding:12px 18px;"><div style="font-size:12px; color:#666; margin-bottom:10px;">${escapeHtml(label)}</div><img class="generated-image" src="${fullBase64}" style="max-width:100%; border-radius:12px;"></div>`;
+            const existingPreview=document.getElementById(previewId);
+            if(existingPreview){
+                existingPreview.innerHTML=previewHtml;
+                previewDiv=existingPreview;
+                return;
+            }
+            previewDiv=appendMessageToUI('bot',previewHtml);
+            previewDiv.id=previewId;
+        };
+
+        while(true){
+            const {done,value}=await reader.read();
+            if(done)break;
+            const decodedChunk=decoder.decode(value,{stream:true});
+            rawResponse+=decodedChunk;
+            buffer+=decodedChunk;
+            const lines=buffer.split('\n');
+            buffer=lines.pop();
+
+            for(const rawLine of lines){
+                const line=rawLine.trim();
+                if(!line.startsWith('data:'))continue;
+                const eventData=line.replace(/^data:\s*/,'');
+                if(!eventData||eventData==='[DONE]')continue;
+
+                try{
+                    const event=JSON.parse(eventData);
+                    const eventType=event.type||'';
+                    if(eventType.endsWith('.partial_image')&&event.b64_json){
+                        finalMimeType=getOpenAIOutputMime(event.output_format||'png');
+                        renderPreview(`data:${finalMimeType};base64,${event.b64_json}`,'正在生成预览图...');
+                    }else if(eventType.endsWith('.completed')){
+                        finalMimeType=getOpenAIOutputMime(event.output_format||'png');
+                        finalImageB64=event.b64_json||event.data?.[0]?.b64_json||finalImageB64;
+                    }else if(eventType.endsWith('.error')){
+                        const errorMessage=typeof event.error==='string'?event.error:(event.error?.message||'OpenAI 图片流返回错误');
+                        throw new Error(errorMessage);
+                    }
+                }catch(e){
+                    if(e instanceof Error&&e.message!=='Unexpected end of JSON input')throw e;
+                    console.warn('Parse OpenAI image SSE error:',e);
+                }
+            }
+        }
+
+        if(previewDiv&&previewDiv.parentElement)previewDiv.remove();
+        if(!finalImageB64){
+            const rawText=(rawResponse + decoder.decode()).trim();
+            if(rawText){
+                try{
+                    const payload=JSON.parse(rawText);
+                    const normalized=normalizeOpenAIImagesApiResponse(payload,'image/png');
+                    if(normalized?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data){
+                        return normalized;
+                    }
+                }catch(_){ }
+            }
+            throw new Error('流式图片返回中未收到最终图片');
+        }
+
+        return {
+            candidates:[{
+                content:{
+                    parts:[{
+                        inlineData:{
+                            mimeType:finalMimeType,
+                            data:finalImageB64
+                        }
+                    }]
+                }
+            }]
+        };
+    }
+
+    async function processOpenAIImagesApi(config,text,imagesBase64,loadingDiv,sessionId){
+        const prompt=enhanceOpenAIImagePrompt(await buildOpenAIImagePrompt(sessionId,text));
+        const size=getOpenAIImageSize();
+        const quality=getOpenAIImageQuality();
+        const outputFormat='png';
+        const isEditMode=imagesBase64.length>0;
+        const requestUrl=`${normalizeOpenAIHost(config.host)}${isEditMode?'/v1/images/edits':'/v1/images/generations'}`;
+        let requestOptions;
+
+        if(isEditMode){
+            const formData=new FormData();
+            formData.append('model',config.model);
+            formData.append('prompt',prompt);
+            formData.append('size',size);
+            formData.append('quality',quality);
+            formData.append('output_format',outputFormat);
+            if(state.useStreaming){
+                formData.append('stream','true');
+                formData.append('partial_images','2');
+            }
+            imagesBase64.forEach((b64,index)=>{
+                formData.append('image[]',rawBase64ToFile(b64,`edit-${index+1}.jpg`));
+            });
+
+            requestOptions={
+                method:'POST',
+                headers:{
+                    'Authorization':`Bearer ${config.key}`,
+                    'Accept':state.useStreaming?'text/event-stream':'application/json'
+                },
+                body:formData
+            };
+        }else{
+            const payload={
+                model:config.model,
+                prompt,
+                size,
+                quality,
+                output_format:outputFormat,
+                n:1
+            };
+            if(state.useStreaming){
+                payload.stream=true;
+                payload.partial_images=2;
+            }
+
+            requestOptions={
+                method:'POST',
+                headers:{
+                    'Authorization':`Bearer ${config.key}`,
+                    'Content-Type':'application/json',
+                    'Accept':state.useStreaming?'text/event-stream':'application/json'
+                },
+                body:JSON.stringify(payload)
+            };
+        }
+
+        const res=await nativeFetch(requestUrl,requestOptions);
+        if(!res.ok){
+            let errorMessage=`HTTP ${res.status}: ${res.statusText}`;
+            try{
+                const errorData=await res.json();
+                errorMessage=JSON.stringify(errorData);
+            }catch(_){ }
+            throw new Error(errorMessage);
+        }
+
+        if(state.useStreaming)return await parseOpenAIImageStream(res,loadingDiv,sessionId);
+        const payload=await res.json();
+        return normalizeOpenAIImagesApiResponse(payload,getOpenAIOutputMime(outputFormat));
+    }
+
     async function processGeneration(config,text,imagesBase64,loadingDiv,sessionId,progressId){
         try{
             let data;
             if (config.type === 'openai') {
-                // 构建消息数组
-                let messages = [];
-                let contextImages = []; // 收集上下文中的历史图片
+                if ((config.openaiMode || 'chat') === 'images') {
+                    data = await processOpenAIImagesApi(config, text, imagesBase64, loadingDiv, sessionId);
+                    activeGenerations.delete(sessionId);
+                    renderSessionList();
+                } else {
+                    // 构建消息数组
+                    let messages = [];
+                    let contextImages = []; // 收集上下文中的历史图片
 
                 // 如果启用了上下文，获取历史消息
                 if (state.useContext && state.contextCount > 0) {
@@ -1891,6 +2319,7 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
                         return;
                     }
                 }
+                }
             } else {
                 // Build contents array for Gemini API
                 let contents = [];
@@ -1963,21 +2392,23 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
             let botInnerHtml='';
             let generatedImages = []; // 收集生成的图片base64数据
             if(data.candidates?.[0]?.content?.parts){
-                data.candidates[0].content.parts.forEach(part=>{
+                for(const part of data.candidates[0].content.parts){
                     if(part.inlineData&&part.inlineData.mimeType.startsWith('image/')){
-                        const fullBase64=`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                        generatedImages.push(part.inlineData.data); // 保存纯base64数据
-                        console.log('🎨 收集到生成的图片，base64长度:', part.inlineData.data.length);
+                        const originalBase64=`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        const fullBase64=await maybePostProcessGeneratedImage(config,originalBase64,part.inlineData.mimeType);
+                        const pureBase64=fullBase64.split(',')[1]||part.inlineData.data;
+                        generatedImages.push(pureBase64); // 保存纯base64数据
+                        console.log('🎨 收集到生成的图片，base64长度:', pureBase64.length);
                         const now=new Date();
                         const filename=`gemini_${now.getTime()}.png`;
 
                         // 自动保存到本地目录
                         if (FileSystemManager.isEnabled && FileSystemManager.directoryHandle) {
                             console.log('🎨 图片生成完成，开始自动保存...');
-                            FileSystemManager.saveImageToDirectory(fullBase64, filename).then(success => {
-                                if (success) {
-                                    console.log('✅ 图片已自动保存到本地目录');
-                                    showToast(`✅ 图片已保存: ${filename}`, 'success', 2000);
+                                FileSystemManager.saveImageToDirectory(fullBase64, filename).then(success => {
+                                    if (success) {
+                                        console.log('✅ 图片已自动保存到本地目录');
+                                        showToast(`✅ 图片已保存: ${filename}`, 'success', 2000);
                                 }
                             });
                         }
@@ -2025,7 +2456,7 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
                         }
                         botInnerHtml += imagesHtml;
                     }
-                })
+                }
             }
 
             if(botInnerHtml){
@@ -2108,6 +2539,11 @@ function escapeHtml(text) { return text.replace(/[&<>"']/g, m => ({ '&': '&amp;'
             const streamDiv = document.getElementById('stream-text-content');
             if (streamDiv && streamDiv.closest('.message-row')) {
                 streamDiv.closest('.message-row').remove();
+            }
+
+            const previewDiv = document.getElementById(`stream-image-preview-${sessionId}`);
+            if (previewDiv && previewDiv.closest('.message-row')) {
+                previewDiv.closest('.message-row').remove();
             }
 
             activeGenerations.delete(sessionId); renderSessionList(); let msg=e.message; try{const jsonErr=JSON.parse(e.message);if(jsonErr.error&&jsonErr.error.message)msg=jsonErr.error.message}catch(_){} const errorHtml=`<div class="msg-content" style="color:#d93025">❌ Error: ${escapeHtml(msg)}</div>`; const errorMsgId = await saveMessage(sessionId,'bot','Error',[],errorHtml); if(sessionId===currentSessionId){ if(loadingDiv)loadingDiv.remove(); appendMessageToUI('bot',errorHtml,'Error',[],errorMsgId) }

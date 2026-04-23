@@ -197,18 +197,29 @@
                     <div class="api-input-group">
                         <input type="hidden" id="p-id">
                         <input type="text" id="p-name" placeholder="渠道名称 (如: 官方API)">
-                        <select id="p-type" class="provider-selector" style="margin-bottom:10px;">
+                        <select id="p-type" class="provider-selector" style="margin-bottom:10px;" onchange="ProviderManager.handleTypeChange(this.value)">
                             <option value="gemini">Gemini 原生接口</option>
                             <option value="openai">OpenAI 兼容接口</option>
                         </select>
+                        <div id="openai-mode-group" style="display:none; margin-bottom:10px;">
+                            <select id="p-openai-mode" class="provider-selector">
+                                <option value="chat">OpenAI Chat Completions（兼容旧逻辑）</option>
+                                <option value="images">OpenAI Images API（/v1/images/*）</option>
+                            </select>
+                            <div style="font-size:11px; color:#666; margin-top:6px; line-height:1.5;">
+                                选择 Images API 后：无参考图走 <code>/v1/images/generations</code>，有参考图走 <code>/v1/images/edits</code>
+                            </div>
+                        </div>
                         <input type="text" id="p-host" placeholder="API Base URL (https://...)">
                         <input type="password" id="p-key" placeholder="API Key (sk-...)">
                         <select id="p-model-select" onchange="document.getElementById('p-model').value = this.value" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 8px;">
                             <option value="">-- 选择预设模型或在下方自定义 --</option>
+                            <option value="gpt-image-2">gpt-image-2</option>
+                            <option value="gpt-image-1.5">gpt-image-1.5</option>
                             <option value="gemini-2.5-flash-image">gemini-2.5-flash-image</option>
                             <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview</option>
                         </select>
-                        <input type="text" id="p-model" placeholder="Model (e.g. gemini-3-pro-image-preview)">
+                        <input type="text" id="p-model" placeholder="Model (e.g. gpt-image-2 / gemini-3-pro-image-preview)">
                     </div>
                     <div class="action-row">
                         <button class="config-btn" onclick="ProviderManager.clearForm()">清空/新增</button>
