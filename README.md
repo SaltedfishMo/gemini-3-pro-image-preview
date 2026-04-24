@@ -1,4 +1,4 @@
-# Gemini 3 Pro Image Preview
+# Gemini 3 Pro Image Preview & GPT image 2
 
 <div align="center">
 
